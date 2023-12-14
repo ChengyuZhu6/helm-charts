@@ -68,6 +68,18 @@ spec:
 {{ toYaml .Values.resources | indent 12 }}
         {{- if .Values.containerRuntime.containerd.enable }}
         lifecycle:
+          preStop:
+            exec:
+              command:
+              - "/bin/sh"
+              - "-c"
+              - |
+                # Recover the containerd config file.
+                etcContainerd={{ .Values.containerRuntime.containerd.configFile }}
+                rm -f ${etcContainerd}
+                mv ${etcContainerd}.bak ${etcContainerd}
+                # currently, without host pid in container, we can not nsenter with pid and can not invoke systemctl correctly.
+                nsenter -t 1 -m systemctl -- restart containerd.service
           postStart:
             exec:
               command:
@@ -101,13 +113,13 @@ spec:
       - name: update-containerd
         image: "{{ .Values.containerRuntime.initContainerImage }}"
         imagePullPolicy: {{ .Values.pullPolicy | quote }}
-        resources:
-{{ toYaml .Values.resources | indent 12 }}
+        resources: {{ toYaml .Values.resources | indent 12 }}
         command:
         - /bin/sh
         - -cx
         - |-
           etcContainerd={{ .Values.containerRuntime.containerd.configFile }}
+          cp ${etcContainerd} ${etcContainerd}.bak
 
           toml check $etcContainerd proxy_plugins.nydus
           if [ $? -eq 0 ]; then
